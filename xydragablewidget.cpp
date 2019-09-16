@@ -2,10 +2,9 @@
 #include <QScrollBar>
 #include <QEvent>
 #include <QMouseEvent>
-#include <QDebug>
 
 XYDragableWidget::XYDragableWidget(QWidget *centerWidget, XYDragableWidget::DIRECTION dire, QWidget *parent)
-    : QWidget(parent), centerWidget(centerWidget), direction(dire), mouseSensitivity(1)
+    : QWidget(parent), filterObjsPressed(false), mouseSensitivity(1), centerWidget(centerWidget), direction(dire)
 {
     this->centerWidget = centerWidget;
     this->centerWidget->setParent(this);
@@ -30,20 +29,18 @@ void XYDragableWidget::resizeEvent(QResizeEvent *event)
 
 bool XYDragableWidget::eventFilter(QObject *obj, QEvent *event)
 {
-    static bool pressed = false;
-    static QPoint lastPos;
     if (centerWidget == obj)
     {
         if (event->type() == QEvent::MouseButtonPress)
         {
             QMouseEvent *mouse_event = (QMouseEvent *)event;
-            pressed = true;
-            lastPos = mouse_event->globalPos();
+            filterObjsPressed = true;
+            filterObjscurPressedPoint = filterObjsLastPressedPoint = mouse_event->globalPos();
         }
         else if (event->type() == QEvent::MouseButtonRelease)
         {
-            pressed = false;
-            lastPos = QPoint();
+            filterObjsPressed = false;
+            filterObjsLastPressedPoint = QPoint();
         }
         else if (event->type() == QEvent::Wheel)
         {
@@ -83,44 +80,53 @@ bool XYDragableWidget::eventFilter(QObject *obj, QEvent *event)
                 }
             }
         }
-        else if (event->type() == QEvent::MouseMove && pressed)
+        else if (event->type() == QEvent::MouseMove && filterObjsPressed)
         {
             QMouseEvent *mouse_event = (QMouseEvent *)event;
             if (direction == HORIZONTAL)
             {
-                if (lastPos.x() > mouse_event->globalPos().x())
+                if (qAbs(filterObjscurPressedPoint.x() - mouse_event->globalPos().x()) > 10) // 边界值
                 {
-                    if (centerWidget->pos().x() - 1 >= width() - centerWidget->width())
+                    if (filterObjsLastPressedPoint.x() > mouse_event->globalPos().x() + 5)
                     {
-                        centerWidget->move(centerWidget->pos().x() - mouseSensitivity, centerWidget->pos().y());
+                        if (centerWidget->pos().x() - 1 >= width() - centerWidget->width())
+                        {
+                            centerWidget->move(centerWidget->pos().x() - mouseSensitivity, centerWidget->pos().y());
+                        }
+                        filterObjsLastPressedPoint = mouse_event->globalPos();
                     }
-                }
-                else if (lastPos.x() < mouse_event->globalPos().x())
-                {
-                    if (centerWidget->pos().x() + 1 <= 0)
+                    else if (filterObjsLastPressedPoint.x() < mouse_event->globalPos().x() - 5)
                     {
-                        centerWidget->move(centerWidget->pos().x() + mouseSensitivity, centerWidget->pos().y());
+                        if (centerWidget->pos().x() + 1 <= 0)
+                        {
+                            centerWidget->move(centerWidget->pos().x() + mouseSensitivity, centerWidget->pos().y());
+                        }
+                        filterObjsLastPressedPoint = mouse_event->globalPos();
                     }
                 }
             }
             else
             {
-                if (lastPos.y() > mouse_event->globalPos().y())
+                if (qAbs(filterObjscurPressedPoint.y() - mouse_event->globalPos().y()) > 10) // 边界值
                 {
-                    if (centerWidget->pos().y() - 1 >= height() - centerWidget->height())
+                    if (filterObjsLastPressedPoint.y() > mouse_event->globalPos().y() + 5)
                     {
-                        centerWidget->move(centerWidget->pos().x(), centerWidget->pos().y() - mouseSensitivity);
+                        if (centerWidget->pos().y() - 1 >= height() - centerWidget->height())
+                        {
+                            centerWidget->move(centerWidget->pos().x(), centerWidget->pos().y() - mouseSensitivity);
+                        }
+                        filterObjsLastPressedPoint = mouse_event->globalPos();
                     }
-                }
-                else if (lastPos.y() < mouse_event->globalPos().y())
-                {
-                    if (centerWidget->pos().y() + 1 <= 0)
+                    else if (filterObjsLastPressedPoint.y() < mouse_event->globalPos().y() - 5)
                     {
-                        centerWidget->move(centerWidget->pos().x(), centerWidget->pos().y() + mouseSensitivity);
+                        if (centerWidget->pos().y() + 1 <= 0)
+                        {
+                            centerWidget->move(centerWidget->pos().x(), centerWidget->pos().y() + mouseSensitivity);
+                        }
+                        filterObjsLastPressedPoint = mouse_event->globalPos();
                     }
                 }
             }
-            lastPos = mouse_event->globalPos();
         }
     }
 

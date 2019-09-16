@@ -12,7 +12,8 @@ public:
     ~XYPushButton();
     bool isChecked();
     static bool isChinese();
-    static void resizeAllPerfect(const QSize &size);
+    static QString EnText();
+    static QString zhongText();
     QSize sizeHint() const;
 
 signals:
@@ -23,7 +24,6 @@ signals:
     void checkedChanged(bool checked = false);
 
 public slots:
-    void resizePerfect(const QSize &size);
     void setChecked(bool checked);
     void setCheckable(bool checkable);
     void startRepeatTimer();

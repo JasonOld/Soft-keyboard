@@ -15,11 +15,14 @@ class XYMovableLabel: public QLabel
 {
     Q_OBJECT
 public:
-    XYMovableLabel(QWidget *parent = NULL)
-        :QLabel(parent)
-    {
+    XYMovableLabel(QWidget *parent = NULL);
 
-    }
+public slots:
+    void setText(const QString &text);
+    void clear();
+
+signals:
+    void textChanged(const QString &text);
 
 protected:
     bool event(QEvent *event);
@@ -35,10 +38,11 @@ public:
 
 signals:
     void triangleBtnClicked();
-//    void keyClicked(int unicode, int key, Qt::KeyboardModifiers modifiers, bool press);
+    void keyClicked(int unicode, int key, Qt::KeyboardModifiers modifiers, bool press);
 
 public slots:
-    void keyClicked(int unicode, int key, Qt::KeyboardModifiers modifiers, bool press);
+    bool handleQKeyEvent(QKeyEvent *event);
+    bool keyEventHandle(int unicode, int key, Qt::KeyboardModifiers modifiers, bool press);
     void showLetterWidget();
     void showNumberWidget();
     void languageChanged();
@@ -57,9 +61,12 @@ protected:
     void paintEvent(QPaintEvent *event);
     void mousePressEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
+    void mouseMoveEvent(QMouseEvent *event);
     bool eventFilter(QObject *obj, QEvent *event);
+    void resizeRequest(QMouseEvent *event);
 
 private:
+    enum ResizeType{No, Top, Bottom};
     explicit XYVirtualKeyboard(QWidget *parent = 0);
     static XYVirtualKeyboard *instance;             // 单例句柄
 
@@ -75,8 +82,10 @@ private:
     XYMovableLabel            *letterLabel;        // 输入字母显示控件,同时提供对键盘的移动操作
     XYHDragableTranslateView  *translateHView;      // 查询翻译内容展示控件
     XYVDragableTranslateView  *translateVView;      // 查询翻译内容展示控件
-	XYVDragableTranslateView  *symbolView;          // 特殊符号展示控件
+    XYVDragableTranslateView  *symbolView;          // 特殊符号展示控件
     XYHDragableTranslateView  *funcHView;           // 功能拖拽
+    ResizeType                 resizeType;          // 拉伸类型
+    QPoint                     lastResizePos;       // 上次拉伸位置
 
     QRect                      triangleBtnRect;    // 记录三角按钮的矩形框
     bool                       triangleBtnPressed; // 记录三角按钮是否按下

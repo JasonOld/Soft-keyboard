@@ -22,10 +22,9 @@
 #include "xygooglepinyin.h"
 
 // xyinput拼音接口
-#include "xykeyboardfilter.h"
 #include "chineseInput/xyinputsearchinterface.h"
 
-// #define XYINPUT    // 如果不定义使用google引擎
+#define XYINPUT    // 如果不定义使用google引擎
 
 XYVirtualKeyboard *XYVirtualKeyboard::instance = NULL;
 
@@ -41,13 +40,26 @@ XYVirtualKeyboard *XYVirtualKeyboard::getInstance()
 void XYVirtualKeyboard::initPinyinDictionary()
 {
 #ifdef XYINPUT
-    bool ret = XYInputSearchInterface::getInstance()->initInputBase(qApp->applicationDirPath() + "/chineseBase/chinese.db");
+    bool ret = XYInputSearchInterface::getInstance()->initInputBase(qApp->applicationDirPath()
+                                                                    + "/chineseBase/chinese.db");
+    if (!ret)
+    {
+        ret = XYInputSearchInterface::getInstance()->initInputBase(qApp->applicationDirPath()
+                                                                   + "/../../Soft-keyboard/chineseInput/chineseBase/chinese.db");
+    }
 #else
     googlePinyin = new pinyin_im;
-    bool ret = googlePinyin->init("../Soft-keyboard/libgooglepinyin/dict");
+    bool ret = googlePinyin->init(qApp->applicationDirPath() + "/dict");
+    if (!ret)
+    {
+        ret = googlePinyin->init(qApp->applicationDirPath()
+                                 +  "/../../Soft-keyboard/libgooglepinyin/dict");
+    }
 #endif
-    if (!ret) {
-        QMessageBox::warning(NULL, "warning", "Load lexicon failed!", QMessageBox::Ok);
+
+    if (!ret)
+    {
+        qDebug() << Q_FUNC_INFO << __LINE__ << "Load lexicon failed!";
     }
 }
 
@@ -59,8 +71,13 @@ void XYVirtualKeyboard::switchLanguage()
     clear_history();
 }
 
-void XYVirtualKeyboard::keyClicked(int unicode, int key, Qt::KeyboardModifiers modifiers, bool press)
+bool XYVirtualKeyboard::handleQKeyEvent(QKeyEvent *event)
 {
+    int key = event->key();
+    int unicode = event->text().isEmpty() ? key : event->text().at(0).unicode();
+    Qt::KeyboardModifiers modifiers = event->modifiers();
+    bool press = event->type() == QEvent::KeyPress;
+
     if (XYPushButton::chinese)
     {
         if (press && modifiers == 0)
@@ -70,24 +87,24 @@ void XYVirtualKeyboard::keyClicked(int unicode, int key, Qt::KeyboardModifiers m
             case Qt::Key_Space:
                 if (space_clicked())
                 {
-                    return;
+                    return true;
                 }
             case Qt::Key_Backspace:
                 if (backspace_clicked())
                 {
-                    return;
+                    return true;
                 }
             case Qt::Key_Enter:
             case Qt::Key_Return:
                 if (enter_clicked())
                 {
-                    return;
+                    return true;
                 }
             default:
                 if (Qt::Key_A <= key && key <= Qt::Key_Z)
                 {
                     a2zkey_clicked(unicode, key);
-                    return;
+                    return true;
                 }
                 else if (Qt::Key_1 <= key && key <= Qt::Key_9)
                 {
@@ -95,14 +112,30 @@ void XYVirtualKeyboard::keyClicked(int unicode, int key, Qt::KeyboardModifiers m
                     if (translateHView->dataStrings.size() > index)
                     {
                         userSelectChinese(translateHView->dataStrings.at(index), index);
-                        return;
+                        return true;
                     }
                 }
             }
         }
     }
 
-    XYKeyBoardFilter::getInstance()->postEvent(unicode, key, modifiers, press);
+    return false;
+}
+
+bool XYVirtualKeyboard::keyEventHandle(int unicode, int key, Qt::KeyboardModifiers modifiers, bool press)
+{
+    QKeyEvent event(press ? QEvent::KeyPress : QEvent::KeyRelease,
+                    key,
+                    modifiers,
+                    QChar(unicode));
+
+    if (handleQKeyEvent(&event))
+    {
+        return true;
+    }
+
+    emit keyClicked(unicode, key, modifiers, press);
+    return false;
 }
 
 void XYVirtualKeyboard::showLetterWidget()
@@ -157,7 +190,7 @@ void XYVirtualKeyboard::triangleBtnClickedOP()
         }
         else
         {
-            qApp->quit();
+            close();
         }
     }
     else
@@ -279,7 +312,7 @@ void XYVirtualKeyboard::funcClicked(const QString &text, int index)
         QString filepath = QFileDialog::getOpenFileName(this);
         if (!filepath.isEmpty())
         {
-            XYSKIN->loadSkipWithFile(filepath);
+            XYSKIN->loadSkinWithFile(filepath);
             update();
         }
         break;
@@ -374,17 +407,33 @@ void XYVirtualKeyboard::paintEvent(QPaintEvent *event)
     }
 
     painter.drawRect(rect().x(),
-                            rect().y() + letterLabel->height() + 8,
-                            rect().width(),
-                            rect().height() - letterLabel->height() - 8);
+                     rect().y() + letterLabel->height() + 8,
+                     rect().width(),
+                     rect().height() - letterLabel->height() - 8);
 }
 
 void XYVirtualKeyboard::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && triangleBtnRect.contains(event->pos()))
+    QRect topStretchRect = QRect(0, 0, width(), 3);
+    QRect bottomStretchRect = QRect(0, height() - 3, width(), 3);
+    if (event->button() == Qt::LeftButton)
     {
-        triangleBtnPressed = true;
-        update();
+        if (triangleBtnRect.contains(event->pos()))
+        {
+            triangleBtnPressed = true;
+            update(triangleBtnRect);
+        }
+        else if (topStretchRect.contains(event->pos()))
+        {
+            resizeType = Top;
+            setCursor(Qt::SplitVCursor);
+        }
+        else if (bottomStretchRect.contains(event->pos()))
+        {
+            resizeType = Bottom;
+            setCursor(Qt::SplitVCursor);
+        }
+        lastResizePos = event->globalPos();
     }
 }
 
@@ -398,9 +447,19 @@ void XYVirtualKeyboard::mouseReleaseEvent(QMouseEvent *event)
             {
                 emit triangleBtnClicked();
             }
-            update();
+            update(triangleBtnRect);
         }
+        resizeType = No;
         triangleBtnPressed = false;
+        setCursor(Qt::ArrowCursor);
+    }
+}
+
+void XYVirtualKeyboard::mouseMoveEvent(QMouseEvent *event)
+{
+    if (resizeType != No)
+    {
+        resizeRequest(event);
     }
 }
 
@@ -461,20 +520,48 @@ bool XYVirtualKeyboard::eventFilter(QObject *obj, QEvent *event)
     return QWidget::eventFilter(obj, event);
 }
 
+void XYVirtualKeyboard::resizeRequest(QMouseEvent *event)
+{
+    QPoint curPos = event->globalPos();
+
+    int y_offset = curPos.y() - lastResizePos.y();
+    switch (resizeType)
+    {
+    case Top:
+    {
+        QSize lastSize = size();
+        resize(lastSize + QSize(0, -y_offset));
+        if (size() != lastSize)
+        {
+            move(pos() + QPoint(0, y_offset));
+        }
+        break;
+    }
+    case Bottom:
+        resize(size() + QSize(0, y_offset));
+        break;
+    default:
+        break;
+    }
+
+    lastResizePos = curPos;
+}
+
 XYVirtualKeyboard::XYVirtualKeyboard(QWidget *parent)
-    : QWidget(parent), triangleBtnPressed(false)
+    : QWidget(parent), triangleBtnPressed(false), resizeType(No)
 {
     this->setWindowFlags(Qt::FramelessWindowHint
-                   | Qt::WindowStaysOnTopHint
-                   | Qt::Tool);
+                         | Qt::WindowStaysOnTopHint
+                         | Qt::Tool);
 #if QT_VERSION >= 0x050000
-//    this->setWindowFlags(this->windowFlags() | Qt::WindowDoesNotAcceptFocus);
+    this->setWindowFlags(this->windowFlags() | Qt::WindowDoesNotAcceptFocus);
 #endif
 
     connect(this, SIGNAL(triangleBtnClicked()), this, SLOT(triangleBtnClickedOP()));
     letterWidget = new QWidget;
     numberWidget = new QWidget;
     letterLabel = new XYMovableLabel;
+    connect(letterLabel, SIGNAL(textChanged(QString)), this, SIGNAL(send_preedit(QString)));
     letterLabel->setMinimumWidth(30);
     QFont font = letterLabel->font();
     font.setPixelSize(20);
@@ -484,7 +571,7 @@ XYVirtualKeyboard::XYVirtualKeyboard(QWidget *parent)
     connect(translateHView, SIGNAL(clicked(QString,int)),
             this, SLOT(userSelectChinese(QString,int)));
     translateHDragableWidget = new XYDragableWidget(translateHView,
-                                                   XYDragableWidget::HORIZONTAL);
+                                                    XYDragableWidget::HORIZONTAL);
     translateHDragableWidget->setMinimumHeight(30);
     translateHDragableWidget->setMouseSensitivity(5);
 
@@ -515,6 +602,15 @@ XYVirtualKeyboard::XYVirtualKeyboard(QWidget *parent)
     funcHView = new XYHDragableTranslateView;
     funcHView->setUnitMinWidth(50);
     funcHView->setUnitMinHeight(40);
+#if QT_VERSION < 0x050000
+    funcHView->dataStrings << QString::fromUtf8("换肤")
+                           << QString::fromUtf8("表情")
+                           << QString::fromUtf8("设置")
+                           << QString::fromUtf8("功能")
+                           << QString::fromUtf8("手势")
+                           << QString::fromUtf8("搜索")
+                           << QString::fromUtf8("更多");
+#else
     funcHView->dataStrings << QStringLiteral("换肤")
                            << QStringLiteral("表情")
                            << QStringLiteral("设置")
@@ -522,10 +618,11 @@ XYVirtualKeyboard::XYVirtualKeyboard(QWidget *parent)
                            << QStringLiteral("手势")
                            << QStringLiteral("搜索")
                            << QStringLiteral("更多");
+#endif
     connect(funcHView, SIGNAL(clicked(QString,int)),
             this, SLOT(funcClicked(QString,int)));
     funcDragableWidget = new XYDragableWidget(funcHView,
-                                                   XYDragableWidget::HORIZONTAL);
+                                              XYDragableWidget::HORIZONTAL);
     funcDragableWidget->setMinimumHeight(30);
     funcDragableWidget->setMouseSensitivity(5);
 
@@ -803,7 +900,7 @@ XYVirtualKeyboard::XYVirtualKeyboard(QWidget *parent)
         connect(XYPushButton::allKeyBtns.at(i),
                 SIGNAL(clicked(int,int,Qt::KeyboardModifiers,bool)),
                 this,
-                SLOT(keyClicked(int,int,Qt::KeyboardModifiers,bool)));
+                SLOT(keyEventHandle(int,int,Qt::KeyboardModifiers,bool)));
 
         connect(XYPushButton::allKeyBtns.at(i),
                 SIGNAL(mousePressed(XYPushButton*)),
@@ -819,7 +916,6 @@ XYVirtualKeyboard::XYVirtualKeyboard(QWidget *parent)
     connect(XYSKIN, SIGNAL(skinChanged()), this, SLOT(skinChanged()));
     caseChanged(false);
     skinChanged();
-    initPinyinDictionary();
 }
 
 bool XYVirtualKeyboard::a2zkey_clicked(int unicode, int key)
@@ -864,6 +960,10 @@ bool XYVirtualKeyboard::backspace_clicked()
             clear_history();
         }
     }
+    else
+    {
+        return false;
+    }
 #else
     if (letterLabel->text().isEmpty())
     {
@@ -905,8 +1005,6 @@ bool XYVirtualKeyboard::backspace_clicked()
 
 bool XYVirtualKeyboard::space_clicked()
 {
-#ifdef XYINPUT
-#else
     if (letterLabel->text().isEmpty())
     {
         return false;
@@ -916,7 +1014,7 @@ bool XYVirtualKeyboard::space_clicked()
     {
         userSelectChinese(translateHView->dataStrings.at(0), 0);
     }
-#endif
+
     return true;
 }
 
@@ -941,7 +1039,6 @@ void XYVirtualKeyboard::search_begin(const QString &keywords)
     foreach (XYTranslateItem *temp, lists) {
         translateHView->dataStrings.append(temp->msTranslate);
     }
-#else
 #endif
     translateHDragableWidget->setHidden(false);
     funcDragableWidget->setHidden(true);
@@ -952,8 +1049,7 @@ void XYVirtualKeyboard::search_begin(const QString &keywords)
 
 void XYVirtualKeyboard::search_closure()
 {
-#ifdef XYINPUT
-#else
+#ifndef XYINPUT
     unsigned index;
     QString update;
 
@@ -996,8 +1092,7 @@ void XYVirtualKeyboard::clear_history()
 
 void XYVirtualKeyboard::loadLetterLabel()
 {
-#ifdef XYINPUT
-#else
+#ifndef XYINPUT
     QString text;
     unsigned index = googlePinyin->cur_search_pos(); // get current search position in spell_str
 
@@ -1051,7 +1146,7 @@ void XYVirtualKeyboard::userSelectChinese(const QString &text, int index)
     if (lists.isEmpty())
     {
         // 这里完成输入了
-        qDebug() << alreadySelectTranslates.join("") + text;
+        emit send_commit(alreadySelectTranslates.join("") + text);
         clear_history();
     }
     else
@@ -1095,6 +1190,26 @@ void XYVirtualKeyboard::userSelectChinese(const QString &text, int index)
 #endif
 }
 
+
+XYMovableLabel::XYMovableLabel(QWidget *parent)
+    :QLabel(parent)
+{
+
+}
+
+void XYMovableLabel::setText(const QString &text)
+{
+    if (text != QLabel::text()) {
+        QLabel::setText(text);
+        emit textChanged(text);
+    }
+}
+
+void XYMovableLabel::clear()
+{
+    QLabel::clear();
+    emit textChanged("");
+}
 
 bool XYMovableLabel::event(QEvent *event)
 {
